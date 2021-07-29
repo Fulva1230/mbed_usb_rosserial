@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 # set the project name
-project(mbed_usb_rosserial)
+project(mbed_usb_rosserial CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
