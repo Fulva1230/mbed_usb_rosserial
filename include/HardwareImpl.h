@@ -11,11 +11,63 @@
 #include <USBSerial.h>
 #include <mbed.h>
 
-//TODO change the implementation to adapt some protocols
+template<class T, size_t N>
+class CycleBuffer {
+public:
+    std::pair<T *, size_t> remaining_content() {
+        if (cross_boundary) {
+            int output_i = 0;
+            for (int i = begin; i < N; ++i) {
+                _outputBuffer[output_i] = _buffer[i];
+                ++output_i;
+            }
+            for (int i = 0; i < end; ++i) {
+                _outputBuffer[output_i] = _buffer[i];
+                ++output_i;
+            }
+            return {_outputBuffer, output_i};
+        } else {
+            return {_buffer + begin, end - begin};
+        }
+    }
+
+    void consume(int num) {
+        begin = begin + num;
+        if (begin >= N) {
+            cross_boundary = false;
+            begin = begin % N;
+        }
+    }
+
+    void insert(T *buffer, int length) {
+        for (int i = 0; i < length; ++i) {
+            _buffer[end] = buffer[i];
+            ++end;
+            if (end == N) {
+                cross_boundary = true;
+                end = 0;
+            }
+        }
+    }
+
+private:
+    size_t begin = 0;
+    size_t end = 0;
+    bool cross_boundary = false;
+    T _buffer[N];
+    T _outputBuffer[N];
+};
+
 USBSerial bufferedSerial{true, 0x1f00, 0x2012, 0x0001};
-constexpr int BUFFER_SIZE = 20;
+constexpr int BUFFER_SIZE = 200;
 
 class HardwareImpl {
+private:
+    Timer timer;
+    char buffer[BUFFER_SIZE];
+    int bufferBoundary{0};
+    int readindex{0};
+    CycleBuffer<uint8_t, BUFFER_SIZE> write_buffer{};
 public:
     explicit HardwareImpl() {
 
@@ -47,18 +99,16 @@ public:
 
     // write data to the connection to ROS
     void write(uint8_t *data, int length) {
-        bufferedSerial.write(data, length);
+        write_buffer.insert(data, length);
+        auto cur_write_buffer = write_buffer.remaining_content();
+        auto written_num = bufferedSerial.write(cur_write_buffer.first, cur_write_buffer.second);
+        write_buffer.consume(written_num);
     }
 
     // returns milliseconds since start of program
     unsigned long time() {
         return timer.read_ms();
     }
-private:
-    Timer timer;
-    char buffer[BUFFER_SIZE];
-    int bufferBoundary{0};
-    int readindex{0};
 };
 
 #endif //ROSSERIAL_MBED_HARDWAREIMPL_H
